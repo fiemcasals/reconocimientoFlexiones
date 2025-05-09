@@ -1,0 +1,283 @@
+
+🔁 Importación de librerías:
+
+import cv2
+
+→ Importa OpenCV, una librería para trabajar con imágenes y videos (leer, mostrar, procesar frames, etc.).
+
+
+import os
+
+→ Permite trabajar con archivos y directorios del sistema operativo.
+
+
+import numpy as np
+
+
+→ Importa NumPy, que se usa para manejar arreglos y operaciones matemáticas rápidas.
+
+
+import torch
+import torch.nn as nn
+
+
+→ Importan PyTorch (una librería para crear y entrenar modelos de machine learning), y el módulo de redes neuronales (nn).
+
+```python
+from torchvision import models, transforms
+```
+
+→ Carga modelos ya entrenados (como resnet18) y herramientas para transformar imágenes.
+
+```python
+from torch.utils.data import Dataset, DataLoader
+```
+
+→ Herramientas para crear conjuntos de datos personalizados y cargarlos en lotes.
+
+---
+
+### ⚙️ Parámetros de configuración:
+
+```python
+SEQUENCE_LENGTH = 30
+```
+
+→ Cada video será representado por 30 frames (imágenes).
+
+```python
+FRAME_SIZE = 224
+```
+
+→ Cada frame se redimensionará a 224x224 píxeles (tamaño estándar para redes preentrenadas).
+
+```python
+BATCH_SIZE = 8
+```
+
+→ Se procesarán 8 videos a la vez durante el entrenamiento.
+
+```python
+NUM_CLASSES = 2
+```
+
+→ Hay dos clases: Correcto o Incorrecto.
+
+---
+
+### 🧪 Transformaciones a aplicar a cada imagen (frame):
+
+```python
+transform = transforms.Compose([
+    transforms.ToPILImage(),
+    transforms.Resize((FRAME_SIZE, FRAME_SIZE)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225])
+])
+```
+
+→ Define una serie de pasos que se aplicarán a cada frame:
+
+* Convertir a imagen PIL.
+* Redimensionar a 224x224.
+* Convertir a tensor (lo que entiende PyTorch).
+* Normalizar con valores típicos usados en redes preentrenadas (ImageNet).
+
+---
+
+### 📦 Dataset personalizado:
+
+```python
+class ExerciseDataset(Dataset):
+```
+
+→ Crea una clase para representar tu propio conjunto de datos.
+
+```python
+    def __init__(self, video_paths, labels, transform):
+```
+
+→ Inicializa el dataset con las rutas a los videos, sus etiquetas (0 o 1) y las transformaciones.
+
+```python
+    def __len__(self):
+        return len(self.video_paths)
+```
+
+→ Retorna cuántos elementos hay en el dataset.
+
+```python
+    def __getitem__(self, idx):
+```
+
+→ Define qué hacer al pedir un ítem: lee el video, extrae frames y devuelve esos frames + la etiqueta.
+
+```python
+    def extract_frames(self, video_path):
+```
+
+→ Esta función lee los frames de un video usando OpenCV:
+
+```python
+        cap = cv2.VideoCapture(video_path)
+```
+
+→ Abre el video.
+
+```python
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+```
+
+→ Obtiene cuántos frames tiene el video.
+
+```python
+        frame_indices = np.linspace(0, total_frames - 1, SEQUENCE_LENGTH, dtype=int)
+```
+
+→ Elige 30 frames distribuidos a lo largo del video.
+
+```python
+        for i in frame_indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+            ret, frame = cap.read()
+```
+
+→ Va al frame i y lo lee.
+
+```python
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+```
+
+→ Convierte el color de BGR (formato de OpenCV) a RGB.
+
+```python
+            frame = self.transform(frame)
+            frames.append(frame)
+```
+
+→ Aplica las transformaciones y guarda el frame.
+
+```python
+        frames = torch.stack(frames)
+        return frames
+```
+
+→ Combina todos los frames en un tensor grande y lo devuelve.
+
+---
+
+### 🧠 Modelo: CNN + LSTM
+
+```python
+class CNNLSTM(nn.Module):
+```
+
+→ Define una red neuronal que mezcla una CNN (para extraer características de imágenes) y una LSTM (para procesar secuencias).
+
+```python
+        self.cnn = models.resnet18(pretrained=True)
+        self.cnn.fc = nn.Identity()
+```
+
+→ Usa ResNet18 ya entrenada, pero le quita la última capa (la que clasifica) porque queremos usar sus "features" solamente.
+
+```python
+        self.lstm = nn.LSTM(input_size=512, hidden_size=hidden_size, batch_first=True)
+```
+
+→ Crea una LSTM que procesará los vectores de características de cada frame (de tamaño 512, que es la salida de ResNet18).
+
+```python
+        self.fc = nn.Linear(hidden_size, num_classes)
+```
+
+→ Capa final que convierte la salida de la LSTM en una predicción de clase.
+
+```python
+    def forward(self, x):
+```
+
+→ Define cómo se procesa un lote de datos:
+
+* Primero se aplica la CNN a cada frame.
+* Luego se pasa toda la secuencia por la LSTM.
+* Se toma la última salida de la LSTM y se clasifica.
+
+---
+
+### 📚 Datos de entrada
+
+```python
+video_paths = ['ruta_a_video1.mp4', 'ruta_a_video2.mp4', ...]
+labels = [0, 1, ...]
+```
+
+→ Lista de rutas a los videos y sus etiquetas (ej: 0 = mal hecho, 1 = bien hecho).
+
+---
+
+### 📤 Dataset y DataLoader
+
+```python
+dataset = ExerciseDataset(video_paths, labels, transform)
+dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+```
+
+→ Se crea el dataset y luego se usa un DataLoader para cargar los datos en lotes mezclados.
+
+---
+
+### ⚙️ Modelo, función de pérdida y optimizador
+
+```python
+model = CNNLSTM(hidden_size=128, num_classes=NUM_CLASSES)
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+```
+
+→ Se define el modelo, la función de pérdida (cuánto se equivoca) y el optimizador (cómo ajusta los pesos para mejorar).
+
+---
+
+### 🔁 Entrenamiento (una época):
+
+```python
+model.train()
+```
+
+→ Indica que el modelo está en modo entrenamiento.
+
+```python
+for frames, labels in dataloader:
+```
+
+→ Recorre todos los lotes de videos y etiquetas.
+
+```python
+    outputs = model(frames)
+```
+
+→ Predice las clases usando el modelo.
+
+```python
+    loss = criterion(outputs, labels)
+```
+
+→ Calcula cuánto se equivocó.
+
+```python
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+
+→ Actualiza los pesos del modelo para que cometa menos errores la próxima vez.
+
+python
+    print(f'Pérdida: {loss.item()}')
+
+
+→ Imprime el valor de la pérdida actual.
+
+
