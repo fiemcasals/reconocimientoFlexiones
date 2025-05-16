@@ -1,3 +1,21 @@
-videosMuestraIncorrecta/ 
-videosMuestraCorrecta/
-videosInter/
+# .gitignore
+# Entorno virtual
+venv/
+
+# Archivos temporales
+*.log
+*.tmp
+__pycache__/
+*.pyc
+.DS_Store
+
+# Modelos entrenados
+models/*.pth
+
+# Archivos de pose generados
+dataset/**/*.json
+poses/**/*.json
+
+# IDEs y editores
+.vscode/
+.idea/
